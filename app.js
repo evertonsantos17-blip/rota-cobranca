@@ -214,14 +214,26 @@ async function loadDashboard() {
 function renderDashboardRoutes(routes) {
   const today = new Date().toISOString().split('T')[0];
   const em    = routes.filter(r => r.status === 'em_andamento');
-  const fut   = routes.filter(r => r.status === 'planejada' && r.dataInicio >= today);
+  const fut   = routes.filter(r => r.status === 'planejada');
   const conc  = routes.filter(r => r.status === 'concluida');
   document.getElementById('stat-em-rota').textContent    = em.length;
   document.getElementById('stat-futuras').textContent    = fut.length;
   document.getElementById('stat-concluidas').textContent = conc.length;
-  renderRouteList('list-em-andamento', em,   'Nenhuma rota em andamento');
-  renderRouteList('list-futuras',      fut,  'Nenhuma rota futura');
-  renderRouteList('list-concluidas',   conc, 'Nenhuma rota concluída');
+  renderRouteList('list-em-andamento', em, 'Nenhuma rota em andamento');
+  renderRouteList('list-futuras', fut, 'Nenhuma rota planejada');
+  renderRouteList('list-concluidas', conc, 'Nenhuma rota concluida');
+  // Auto-switch para aba Futuras se nao tiver em andamento
+  if (em.length === 0 && fut.length > 0) {
+    setTimeout(() => {
+      const tabs = document.querySelectorAll('.tab-btn');
+      const tcs  = document.querySelectorAll('.tab-content');
+      tabs.forEach(t => t.classList.remove('active'));
+      tcs.forEach(t => t.classList.add('hidden'));
+      if (tabs[1]) tabs[1].classList.add('active');
+      const futTab = document.getElementById('tab-futuras');
+      if (futTab) futTab.classList.remove('hidden');
+    }, 100);
+  }
 }
 
 function renderRouteList(id, routes, emptyMsg) {
@@ -401,31 +413,58 @@ function estadoParaUF(nomeEstado) {
 // ===== RENDER STOPS =====
 function renderPendingStops() {
   const list = document.getElementById('stops-list');
-  document.getElementById('stops-count').textContent = pendingStops.length;
+  if (!list) return;
+  const countEl = document.getElementById('stops-count');
+  if (countEl) countEl.textContent = pendingStops.length;
+
   if (!pendingStops.length) {
-    list.innerHTML = `<div class="stops-empty"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg><p>Nenhum endereço ainda</p></div>`;
+    list.innerHTML = `<div class="stops-empty">
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3">
+        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+        <circle cx="12" cy="10" r="3"/>
+      </svg>
+      <p>Nenhum endereço ainda</p>
+    </div>`;
     return;
   }
+
   list.innerHTML = pendingStops.map((s, i) => {
     const date = getDateForStopIdx(i);
-    const badges = holidayAnalysis ? Holidays.getBadgesParaData(date, holidayAnalysis.feriadoMap, holidayAnalysis.finsDeSemana) : [];
-    const bdg = badges.map(b => `<span class="badge badge-${b.type==='feriado'?'feriado':'fds'}">${b.label}</span>`).join('');
+    const badges = holidayAnalysis
+      ? Holidays.getBadgesParaData(date, holidayAnalysis.feriadoMap, holidayAnalysis.finsDeSemana)
+      : [];
+    const bdg = badges.map(b =>
+      `<span class="badge badge-${b.type==='feriado'?'feriado':'fds'}">${b.label}</span>`
+    ).join('');
+
+    const cidade = s.cidade || '';
+    const estado = s.estado || '';
+    const subtitulo = cidade ? `${cidade}${estado ? ', ' + estado : ''}` : s.enderecoCompleto || '';
+
     return `
       <div class="stop-item" draggable="true" data-idx="${i}">
         <div class="stop-drag-handle">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="5" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="19" r="1"/></svg>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="9" cy="5" r="1"/><circle cx="15" cy="5" r="1"/>
+            <circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/>
+            <circle cx="9" cy="19" r="1"/><circle cx="15" cy="19" r="1"/>
+          </svg>
         </div>
         <div class="stop-order-num">${i+1}</div>
         <div class="stop-info-mini">
-          <div class="stop-name-mini">${s.nomeLocal}</div>
-          <div class="stop-addr-mini">${s.cidade}${s.estado?', '+s.estado:''}</div>
-          ${bdg?`<div class="stop-badges-mini">${bdg}</div>`:''}
+          <div class="stop-name-mini">${s.nomeLocal || 'Endereço ' + (i+1)}</div>
+          <div class="stop-addr-mini">${subtitulo}</div>
+          ${bdg ? `<div class="stop-badges-mini">${bdg}</div>` : ''}
         </div>
-        <button class="stop-delete" onclick="removeStop(${i})">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+        <button class="stop-delete" onclick="removeStop(${i})" title="Remover">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="3 6 5 6 21 6"/>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+          </svg>
         </button>
       </div>`;
   }).join('');
+
   initDragAndDrop();
 }
 
@@ -551,14 +590,18 @@ window.openRoute = async function (routeId) {
     const snap = await getDoc(doc(db,'routes',routeId));
     if (!snap.exists()) { showToast('Rota não encontrada.','error'); return; }
     currentRoute = {id:routeId,...snap.data()};
-    const sq = query(collection(db,'routeStops'), where('routeId','==',routeId), orderBy('ordem','asc'));
-    const ss = await getDocs(sq);
-    currentRoute.stops = ss.docs.map(d=>({id:d.id,...d.data()}));
+    try {
+      const sq = query(collection(db,'routeStops'), where('routeId','==',routeId));
+      const ss = await getDocs(sq);
+      currentRoute.stops = ss.docs
+        .map(d=>({id:d.id,...d.data()}))
+        .sort((a,b)=>(a.ordem||0)-(b.ordem||0));
+    } catch(e2) { currentRoute.stops = []; }
 
     document.getElementById('topbar-title').textContent = currentRoute.nome||'Rota';
     showScreen('screen-detalhe-rota');
     await renderDetalheRota();
-  } catch(e) { console.error(e); showToast('Erro ao abrir.','error'); }
+  } catch(e) { console.error(e); showToast('Erro ao abrir rota.','error'); }
 };
 
 async function renderDetalheRota() {
